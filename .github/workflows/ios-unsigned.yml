@@ -39,13 +39,16 @@ jobs:
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
           xcodebuild -version
 
-      # 项目同时含 android/windows/maccatalyst 目标，装完整 maui workload 避免 NETSDK1147
+      # 仓库根目录有多个 csproj/slnx，workload install 在当前目录探测项目会报 MSB1011。
+      # 改到 .github/workflows 下执行：这里没有项目文件，但仍会向上找到根目录的 global.json。
       - name: Install MAUI workload
+        working-directory: .github/workflows
         run: dotnet workload install maui --version 10.0.401
 
       - name: Verify toolchain
         run: |
           dotnet --version
+          dotnet workload list
           dotnet workload --info
 
       # 覆盖 TargetFrameworks，防止 macOS 上尝试构建 windows 目标导致 NETSDK1100
