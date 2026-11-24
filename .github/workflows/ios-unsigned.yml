@@ -24,48 +24,49 @@ jobs:
         uses: actions/checkout@v4
 
       # 内联生成 global.json，无需单独上传该文件
-      - name: Setup global.json (pin SDK 10.0.401)
+      - name: Setup global.json (pin SDK 11.0.0)
         run: |
           cat > global.json <<'GLOBAL_EOF'
           {
             "sdk": {
-              "version": "10.0.401",
+              "version": "11.0.0",
               "rollForward": "disable"
             }
           }
           GLOBAL_EOF
 
-      # 固定 SDK / workload / Xcode 组合：10.0.401 + workload 10.0.401 + Xcode 26.6
-      # 这组版本已在 macos-26 runner 上验证过可以产出无签名 ipa
-      - name: Install .NET 10.0.401
+      # .NET 11 GA（CoreCLR 运行时）+ 自动配套 workload + runner 默认 Xcode
+      # CoreCLR 内置解释器，不依赖 JIT，有望解决 iOS 26 上 Mono 解释器失效的黑屏问题
+      - name: Install .NET 11.0.0
         run: |
           curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
-          bash dotnet-install.sh --version 10.0.401 --install-dir "$HOME/.dotnet"
+          bash dotnet-install.sh --version 11.0.0 --install-dir "$HOME/.dotnet"
           echo "DOTNET_ROOT=$HOME/.dotnet" >> "$GITHUB_ENV"
           echo "$HOME/.dotnet" >> "$GITHUB_PATH"
 
-      # 关键：runner 上还有 .NET 11，必须用 global.json 钉住 10.0.401，
-      # 否则 workload install 会把 10 的 manifest 装进 11.0.100 版本带并冲突
+      # 关键：用 global.json 钉住 11.0.0，避免 CLI 挑到 runner 上更高版本导致 manifest 版本带冲突
       - name: Verify pinned SDK
         run: |
           SELECTED=$(dotnet --version)
           echo "Selected SDK: $SELECTED"
           dotnet --list-sdks
-          if [ "$SELECTED" != "10.0.401" ]; then
-            echo "::error::Expected SDK 10.0.401 but got $SELECTED. Make sure global.json is in the repo root."
+          if [ "$SELECTED" != "11.0.0" ]; then
+            echo "::error::Expected SDK 11.0.0 but got $SELECTED. Make sure global.json is in the repo root."
             exit 1
           fi
 
-      - name: Select Xcode
+      - name: Check Xcode
         run: |
-          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          echo "Available Xcodes:"
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          echo "Current:"
           xcodebuild -version
 
       # 仓库根目录有多个 csproj/slnx，workload install 在当前目录探测项目会报 MSB1011。
       # 改到 .github/workflows 下执行：这里没有项目文件，但仍会向上找到根目录的 global.json。
       - name: Install MAUI workload
         working-directory: .github/workflows
-        run: dotnet workload install maui --version 10.0.401
+        run: dotnet workload install maui
 
       - name: Verify toolchain
         run: |
@@ -851,62 +852,43 @@ jobs:
           print('diagnostic early-return injected')
           DIAG_EOF
 
-      # 覆盖 TargetFrameworks，防止 macOS 上尝试构建 windows 目标导致 NETSDK1100
-      - name: Restore iOS target only
-        run: dotnet restore PKHeX.MAUI.csproj -p:TargetFrameworks=net10.0-ios
-
-      # AOT 已验证不可用（PKHeX 的反射/动态代码过不了 AOT，与裁剪无关），直接用 Mono 解释器模式。
-      # TrimMode=copy 不裁剪任何程序集；iOS 上不能用 PublishTrimmed=false。
-      # ArchiveOnBuild=true 强制要求签名，无签名构建必须关掉，只产出 .app。
-      # 此包在 LiveContainer 里必须开启 JIT：长按 App → 设置 → 打开「带 JIT 启动」。
-      # 免 JIT 优先：先试 AOT（关闭 LLVM 后端，这是 aot-instances.dll exit 1 的常见修复）。
-      # AOT 产物不需要 LiveContainer 开 JIT。若仍失败，自动回退到解释器模式（需开 JIT）。
-      - name: Publish unsigned app (AOT, no-LLVM, with fallback)
+      # .NET 11 用 CoreCLR 运行时（内置解释器 + ReadyToRun），不需要 Mono 的 UseInterpreter/MtouchInterpreter。
+      # 把 csproj 里所有 net10.0 TFM 改成 net11.0，让条件 PropertyGroup 也能匹配。
+      - name: Retarget to .NET 11
         run: |
-          set +e
-          echo "===== 第 1 次尝试：AOT（关闭 LLVM）====="
+          python3 - <<'TFM_EOF'
+          p = 'PKHeX.MAUI.csproj'
+          s = open(p, encoding='utf-8-sig').read()
+          n = s.count('net10.0')
+          s = s.replace('net10.0', 'net11.0')
+          open(p, 'w', encoding='utf-8').write(s)
+          print(f'replaced {n} net10.0 -> net11.0')
+          TFM_EOF
+          grep -n "TargetFrameworks" PKHeX.MAUI.csproj | head -3
+
+      - name: Restore iOS target
+        run: dotnet restore PKHeX.MAUI.csproj -p:TargetFrameworks=net11.0-ios
+
+      # CoreCLR：不需要 AOT、不需要 Mono 解释器参数、不需要 TrimMode。
+      # ArchiveOnBuild=true 强制要求签名，无签名构建必须关掉，只产出 .app。
+      - name: Publish unsigned app (CoreCLR / .NET 11)
+        run: |
           dotnet publish PKHeX.MAUI.csproj \
             -c Release \
-            -f net10.0-ios \
+            -f net11.0-ios \
             -r ios-arm64 \
-            -p:TargetFrameworks=net10.0-ios \
+            -p:TargetFrameworks=net11.0-ios \
             -p:ApplicationId=${{ inputs.bundle_id }} \
-            -p:TrimMode=copy \
-            -p:MtouchUseLlvm=false \
+            -p:ValidateXcodeVersion=false \
             -p:EnableCodeSigning=false \
             -p:ArchiveOnBuild=false
-          AOT_RC=$?
-          set -e
-          if [ "$AOT_RC" -eq 0 ]; then
-            BUILD_MODE=aot
-            echo "BUILD_MODE=aot" >> "$GITHUB_ENV"
-            echo "::notice::AOT 编译成功，此包免 JIT，可直接在 LiveContainer 运行。"
-          else
-            echo "===== AOT 失败（exit $AOT_RC），回退到 Mono 解释器模式 ====="
-            echo "::warning::AOT 不可用，已回退到解释器模式；此包在 LiveContainer 需开启 JIT。"
-            rm -rf bin obj
-            dotnet restore PKHeX.MAUI.csproj -p:TargetFrameworks=net10.0-ios
-            dotnet publish PKHeX.MAUI.csproj \
-              -c Release \
-              -f net10.0-ios \
-              -r ios-arm64 \
-              -p:TargetFrameworks=net10.0-ios \
-              -p:ApplicationId=${{ inputs.bundle_id }} \
-              -p:UseInterpreter=true \
-              -p:MtouchInterpreter=all \
-              -p:TrimMode=copy \
-              -p:EnableCodeSigning=false \
-              -p:ArchiveOnBuild=false
-            BUILD_MODE=interpreter
-            echo "BUILD_MODE=interpreter" >> "$GITHUB_ENV"
-          fi
-          echo "最终构建模式: $BUILD_MODE"
+          echo "::notice::.NET 11 CoreCLR 构建完成。"
 
       # 手动把 .app 按 IPA 标准结构打包：Payload/<App>.app -> unsigned.ipa
       - name: Pack unsigned IPA
         run: |
           set -euo pipefail
-          PUBLISH_DIR="bin/Release/net10.0-ios/ios-arm64/publish"
+          PUBLISH_DIR="bin/Release/net11.0-ios/ios-arm64/publish"
           echo "Publish output:"
           ls -la "$PUBLISH_DIR"
           EXISTING_IPA=$(find "$PUBLISH_DIR" -maxdepth 1 -name '*.ipa' -print -quit)
@@ -963,7 +945,7 @@ jobs:
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: PKHeXMAUI-zh-${{ env.BUILD_MODE }}
+          name: PKHeXMAUI-zh-net11-coreclr
           path: unsigned.ipa
           if-no-files-found: error
           retention-days: 7
