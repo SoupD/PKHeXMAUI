@@ -60,7 +60,9 @@ jobs:
       - name: Restore iOS target only
         run: dotnet restore PKHeX.MAUI.csproj -p:TargetFrameworks=net10.0-ios
 
-      # EnableCodeSigning=false 跳过签名；ArchiveOnBuild=true 让它产出 .ipa
+      # EnableCodeSigning=false 跳过签名；ArchiveOnBuild=true 让它产出 .ipa。
+      # PKHeX 大量使用反射，Release 默认 AOT + 裁剪会失败；用解释器 + TrimMode=copy 绕开。
+      # 注意 iOS 上不能用 PublishTrimmed=false，必须用 TrimMode=copy。
       - name: Publish unsigned IPA
         run: |
           dotnet publish PKHeX.MAUI.csproj \
@@ -69,6 +71,9 @@ jobs:
             -r ios-arm64 \
             -p:TargetFrameworks=net10.0-ios \
             -p:ApplicationId=${{ inputs.bundle_id }} \
+            -p:UseInterpreter=true \
+            -p:MtouchInterpreter=all \
+            -p:TrimMode=copy \
             -p:EnableCodeSigning=false \
             -p:ArchiveOnBuild=true
 
