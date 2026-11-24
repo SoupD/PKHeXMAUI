@@ -22,6 +22,18 @@ jobs:
           echo "DOTNET_ROOT=$HOME/.dotnet" >> "$GITHUB_ENV"
           echo "$HOME/.dotnet" >> "$GITHUB_PATH"
 
+      # 关键：runner 上还有 .NET 11，必须用 global.json 钉住 10.0.401，
+      # 否则 workload install 会把 10 的 manifest 装进 11.0.100 版本带并冲突
+      - name: Verify pinned SDK
+        run: |
+          SELECTED=$(dotnet --version)
+          echo "Selected SDK: $SELECTED"
+          dotnet --list-sdks
+          if [ "$SELECTED" != "10.0.401" ]; then
+            echo "::error::Expected SDK 10.0.401 but got $SELECTED. Make sure global.json is in the repo root."
+            exit 1
+          fi
+
       - name: Select Xcode
         run: |
           sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
