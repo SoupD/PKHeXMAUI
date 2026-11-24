@@ -890,6 +890,19 @@ jobs:
             echo "-- entitlements --"
             find "$APP_DIR" -name '*.entitlements' -print | head
             echo "===== 诊断结束 ====="
+
+            # 关键修复：EnableCodeSigning=false 让所有 dylib 都未签名，SideStore 重签只签主程序，
+            # 内部 dylib 未签名会导致 dyld 加载失败、启动即黑屏。这里做 ad-hoc 深度签名补齐。
+            echo "===== ad-hoc 深度签名 ====="
+            find "$APP_DIR" -type f \( -name '*.dylib' -o -perm -111 \) -print | while read -r f; do
+              if file "$f" | grep -q 'Mach-O'; then
+                codesign -s - --force "$f" 2>/dev/null || echo "  跳过: $f"
+              fi
+            done
+            codesign -s - --force --deep "$APP_DIR" 2>&1 | head -20 || echo "  主包签名警告"
+            echo "-- 签名验证 --"
+            codesign -vvv --deep --strict "$APP_DIR" 2>&1 | head -20 || echo "  (ad-hoc 验证提示)"
+
             rm -rf Payload unsigned.ipa
             mkdir -p Payload
             # ditto 保留符号链接、文件权限与扩展属性；比 cp -R + zip 更适合含 framework 的 .app
