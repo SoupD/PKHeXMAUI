@@ -3,6 +3,11 @@ name: Build unsigned iOS IPA
 # 只手动触发，避免浪费 GitHub 的 macOS 分钟数
 on:
   workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: 'Bundle identifier (any unique value works for unsigned builds)'
+        required: false
+        default: 'com.pkhexmaui.ios'
 
 jobs:
   build-ios-unsigned:
@@ -63,6 +68,7 @@ jobs:
             -f net10.0-ios \
             -r ios-arm64 \
             -p:TargetFrameworks=net10.0-ios \
+            -p:ApplicationId=${{ inputs.bundle_id }} \
             -p:EnableCodeSigning=false \
             -p:ArchiveOnBuild=true
 
