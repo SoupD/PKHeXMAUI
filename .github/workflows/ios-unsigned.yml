@@ -56,6 +56,10 @@ jobs:
           dotnet workload list
           dotnet workload --info
 
+      # 中文化：把 XAML/C# 中的英文界面文本替换为中文（localization 目录随仓库提交）
+      - name: Apply Chinese localization
+        run: python3 localization/apply_zh.py
+
       # 覆盖 TargetFrameworks，防止 macOS 上尝试构建 windows 目标导致 NETSDK1100
       - name: Restore iOS target only
         run: dotnet restore PKHeX.MAUI.csproj -p:TargetFrameworks=net10.0-ios
@@ -105,7 +109,7 @@ jobs:
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: PKHeXMAUI-unsigned-ios
+          name: PKHeXMAUI-unsigned-ios-zh
           path: unsigned.ipa
           if-no-files-found: error
           retention-days: 7
