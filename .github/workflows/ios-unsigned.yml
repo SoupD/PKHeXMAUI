@@ -861,8 +861,10 @@ jobs:
           s = open(p, encoding='utf-8-sig').read()
           n = s.count('net10.0')
           s = s.replace('net10.0', 'net11.0')
+          # .NET 11 iOS SDK 要求 SupportedOSPlatformVersion >= 15.0（原为 14.0）
+          s = s.replace('>14.0<', '>15.0<')
           open(p, 'w', encoding='utf-8').write(s)
-          print(f'replaced {n} net10.0 -> net11.0')
+          print(f'replaced {n} net10.0 -> net11.0, bumped OS version 14.0 -> 15.0')
           TFM_EOF
           grep -n "TargetFrameworks" PKHeX.MAUI.csproj | head -3
 
@@ -879,6 +881,7 @@ jobs:
             -r ios-arm64 \
             -p:TargetFrameworks=net11.0-ios \
             -p:ApplicationId=${{ inputs.bundle_id }} \
+            -p:SupportedOSPlatformVersion=15.0 \
             -p:ValidateXcodeVersion=false \
             -p:EnableCodeSigning=false \
             -p:ArchiveOnBuild=false
