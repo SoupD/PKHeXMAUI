@@ -8,6 +8,11 @@ on:
         description: 'Bundle identifier (any unique value works for unsigned builds)'
         required: false
         default: 'com.pkhexmaui.ios'
+      diagnostic_mode:
+        description: '诊断模式：把 AppShell 换成简单 Hello 页面，判断黑屏是否由 Shell 渲染引起'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   build-ios-unsigned:
@@ -814,6 +819,37 @@ jobs:
           print(f"Title 豁免（逻辑依赖，保留英文）: {stats['skipped']}")
           PY_EOF
           python3 localization/apply_zh.py
+
+      # 诊断模式：在 CreateWindow 开头插入 early return，绕过 AppShell 直接显示简单页面。
+      # 能显示文字 = Shell 渲染问题；仍黑屏 = 更底层的运行时/解释器问题。
+      - name: Apply diagnostic page (optional)
+        if: ${{ inputs.diagnostic_mode }}
+        run: |
+          python3 - <<'DIAG_EOF'
+          p = 'App.xaml.cs'
+          s = open(p, encoding='utf-8-sig').read()
+          marker = 'protected override Window CreateWindow(IActivationState? activationState)\n    {'
+          if marker not in s:
+              raise SystemExit('CreateWindow marker not found')
+          injection = marker + '''
+              var diagLabel = new Label
+              {
+                  Text = "DIAG OK - render works",
+                  HorizontalOptions = LayoutOptions.Center,
+                  VerticalOptions = LayoutOptions.Center,
+                  FontSize = 30,
+                  TextColor = Colors.Black
+              };
+              var diagPage = new ContentPage
+              {
+                  Content = new Grid { Children = { diagLabel } },
+                  BackgroundColor = Colors.White
+              };
+              return new Window(diagPage);'''
+          s = s.replace(marker, injection, 1)
+          open(p, 'w', encoding='utf-8').write(s)
+          print('diagnostic early-return injected')
+          DIAG_EOF
 
       # 覆盖 TargetFrameworks，防止 macOS 上尝试构建 windows 目标导致 NETSDK1100
       - name: Restore iOS target only
