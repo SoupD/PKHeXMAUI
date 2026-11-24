@@ -68,6 +68,17 @@ jobs:
           dotnet workload list
           dotnet workload --info
 
+      # 关键修复：iOS 26 上 MAUI Shell 渲染黑屏（dotnet/maui#31982）。
+      # 加入 UIDesignRequiresCompatibility 让 App 回退到旧版 UI 渲染模式。
+      - name: Patch Info.plist for iOS 26 Shell rendering
+        run: |
+          PLIST="Platforms/iOS/Info.plist"
+          if ! grep -q "UIDesignRequiresCompatibility" "$PLIST"; then
+            /usr/libexec/PlistBuddy -c "Add :UIDesignRequiresCompatibility bool true" "$PLIST"
+          fi
+          echo "===== Info.plist 关键项 ====="
+          /usr/libexec/PlistBuddy -c "Print :UIDesignRequiresCompatibility" "$PLIST"
+
       # 中文化：脚本与字典内联在 workflow 中，无需在仓库单独放 localization 目录
       - name: Apply Chinese localization
         run: |
