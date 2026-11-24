@@ -55,9 +55,22 @@ jobs:
             exit 1
           fi
 
-      - name: Select Xcode 27.2 (required by .NET 11 GA)
+      - name: Select Xcode 27.x (required by .NET 11)
         run: |
-          sudo xcode-select -s /Applications/Xcode_27.2.app/Contents/Developer
+          echo "Available Xcodes:"
+          ls -d /Applications/Xcode*.app 2>/dev/null || true
+          # 优先 27.2，其次任意 27.x；找不到就报错并列出实际可用版本
+          if [ -d /Applications/Xcode_27.2.app ]; then
+            XC=/Applications/Xcode_27.2.app
+          else
+            XC=$(ls -d /Applications/Xcode_27*.app 2>/dev/null | sort -V | tail -1)
+          fi
+          if [ -z "$XC" ]; then
+            echo "::error::No Xcode 27.x found on this runner. Check the Available Xcodes list above."
+            exit 1
+          fi
+          echo "Using: $XC"
+          sudo xcode-select -s "$XC/Contents/Developer"
           xcodebuild -version
 
       # 仓库根目录有多个 csproj/slnx，workload install 在当前目录探测项目会报 MSB1011。
@@ -880,6 +893,7 @@ jobs:
             -p:TargetFrameworks=net11.0-ios \
             -p:ApplicationId=${{ inputs.bundle_id }} \
             -p:SupportedOSPlatformVersion=15.0 \
+            -p:ValidateSceneManifest=false \
             -p:EnableCodeSigning=false \
             -p:ArchiveOnBuild=false
           echo "::notice::.NET 11 CoreCLR 构建完成。"
