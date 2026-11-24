@@ -60,10 +60,10 @@ jobs:
       - name: Restore iOS target only
         run: dotnet restore PKHeX.MAUI.csproj -p:TargetFrameworks=net10.0-ios
 
-      # EnableCodeSigning=false 跳过签名；ArchiveOnBuild=true 让它产出 .ipa。
       # PKHeX 大量使用反射，Release 默认 AOT + 裁剪会失败；用解释器 + TrimMode=copy 绕开。
-      # 注意 iOS 上不能用 PublishTrimmed=false，必须用 TrimMode=copy。
-      - name: Publish unsigned IPA
+      # iOS 上不能用 PublishTrimmed=false，必须用 TrimMode=copy。
+      # 注意：ArchiveOnBuild=true 会强制要求签名，无签名构建必须关掉，只产出 .app。
+      - name: Publish unsigned app
         run: |
           dotnet publish PKHeX.MAUI.csproj \
             -c Release \
@@ -75,12 +75,37 @@ jobs:
             -p:MtouchInterpreter=all \
             -p:TrimMode=copy \
             -p:EnableCodeSigning=false \
-            -p:ArchiveOnBuild=true
+            -p:ArchiveOnBuild=false
+
+      # 手动把 .app 按 IPA 标准结构打包：Payload/<App>.app -> unsigned.ipa
+      - name: Pack unsigned IPA
+        run: |
+          set -euo pipefail
+          PUBLISH_DIR="bin/Release/net10.0-ios/ios-arm64/publish"
+          echo "Publish output:"
+          ls -la "$PUBLISH_DIR"
+          EXISTING_IPA=$(find "$PUBLISH_DIR" -maxdepth 1 -name '*.ipa' -print -quit)
+          if [ -n "$EXISTING_IPA" ]; then
+            cp "$EXISTING_IPA" unsigned.ipa
+          else
+            APP_DIR=$(find "$PUBLISH_DIR" -maxdepth 1 -name '*.app' -type d -print -quit)
+            if [ -z "$APP_DIR" ]; then
+              echo "::error::No .app bundle found in $PUBLISH_DIR"
+              exit 1
+            fi
+            echo "App bundle: $APP_DIR"
+            rm -rf Payload unsigned.ipa
+            mkdir -p Payload
+            cp -R "$APP_DIR" Payload/
+            zip -q -r unsigned.ipa Payload
+          fi
+          ls -lh unsigned.ipa
+          file unsigned.ipa
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
           name: PKHeXMAUI-unsigned-ios
-          path: bin/Release/net10.0-ios/ios-arm64/publish/*.ipa
+          path: unsigned.ipa
           if-no-files-found: error
           retention-days: 7
