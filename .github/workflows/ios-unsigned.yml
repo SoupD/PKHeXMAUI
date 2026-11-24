@@ -24,12 +24,12 @@ jobs:
         uses: actions/checkout@v4
 
       # 内联生成 global.json，无需单独上传该文件
-      - name: Setup global.json (pin SDK 11.0.0)
+      - name: Setup global.json (pin SDK 11.0.100)
         run: |
           cat > global.json <<'GLOBAL_EOF'
           {
             "sdk": {
-              "version": "11.0.0",
+              "version": "11.0.100",
               "rollForward": "disable"
             }
           }
@@ -37,21 +37,21 @@ jobs:
 
       # .NET 11 GA（CoreCLR 运行时）+ 自动配套 workload + runner 默认 Xcode
       # CoreCLR 内置解释器，不依赖 JIT，有望解决 iOS 26 上 Mono 解释器失效的黑屏问题
-      - name: Install .NET 11.0.0
+      - name: Install .NET 11.0.100
         run: |
           curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
-          bash dotnet-install.sh --version 11.0.0 --install-dir "$HOME/.dotnet"
+          bash dotnet-install.sh --version 11.0.100 --install-dir "$HOME/.dotnet"
           echo "DOTNET_ROOT=$HOME/.dotnet" >> "$GITHUB_ENV"
           echo "$HOME/.dotnet" >> "$GITHUB_PATH"
 
-      # 关键：用 global.json 钉住 11.0.0，避免 CLI 挑到 runner 上更高版本导致 manifest 版本带冲突
+      # 关键：用 global.json 钉住 11.0.100，避免 CLI 挑到 runner 上更高版本导致 manifest 版本带冲突
       - name: Verify pinned SDK
         run: |
           SELECTED=$(dotnet --version)
           echo "Selected SDK: $SELECTED"
           dotnet --list-sdks
-          if [ "$SELECTED" != "11.0.0" ]; then
-            echo "::error::Expected SDK 11.0.0 but got $SELECTED. Make sure global.json is in the repo root."
+          if [ "$SELECTED" != "11.0.100" ]; then
+            echo "::error::Expected SDK 11.0.100 but got $SELECTED. Make sure global.json is in the repo root."
             exit 1
           fi
 
