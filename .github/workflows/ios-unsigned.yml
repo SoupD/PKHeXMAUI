@@ -864,6 +864,7 @@ jobs:
           ls -la "$PUBLISH_DIR"
           EXISTING_IPA=$(find "$PUBLISH_DIR" -maxdepth 1 -name '*.ipa' -print -quit)
           if [ -n "$EXISTING_IPA" ]; then
+            echo "Found existing IPA from publish: $EXISTING_IPA"
             cp "$EXISTING_IPA" unsigned.ipa
           else
             APP_DIR=$(find "$PUBLISH_DIR" -maxdepth 1 -name '*.app' -type d -print -quit)
@@ -872,10 +873,29 @@ jobs:
               exit 1
             fi
             echo "App bundle: $APP_DIR"
+            echo "===== 诊断：.app 结构 ====="
+            echo "-- 顶层 --"
+            ls -la "$APP_DIR" | head -40
+            echo "-- 符号链接 --"
+            find "$APP_DIR" -type l -print | head -40
+            echo "-- framework/dylib --"
+            find "$APP_DIR" \( -name '*.framework' -o -name '*.dylib' \) -print | head -60
+            echo "-- 主可执行文件 --"
+            EXE=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_DIR/Info.plist" 2>/dev/null || echo "")
+            echo "CFBundleExecutable=$EXE"
+            if [ -n "$EXE" ]; then
+              file "$APP_DIR/$EXE"
+              codesign -dv "$APP_DIR/$EXE" 2>&1 | head -20 || echo "（未签名）"
+            fi
+            echo "-- entitlements --"
+            find "$APP_DIR" -name '*.entitlements' -print | head
+            echo "===== 诊断结束 ====="
             rm -rf Payload unsigned.ipa
             mkdir -p Payload
-            cp -R "$APP_DIR" Payload/
-            zip -q -r unsigned.ipa Payload
+            # ditto 保留符号链接、文件权限与扩展属性；比 cp -R + zip 更适合含 framework 的 .app
+            ditto "$APP_DIR" "Payload/$(basename "$APP_DIR")"
+            # -y 保留符号链接
+            zip -q -r -y unsigned.ipa Payload
           fi
           ls -lh unsigned.ipa
           file unsigned.ipa
