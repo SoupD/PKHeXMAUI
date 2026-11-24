@@ -1,0 +1,60 @@
+name: Build unsigned iOS IPA
+
+# 只手动触发，避免浪费 GitHub 的 macOS 分钟数
+on:
+  workflow_dispatch:
+
+jobs:
+  build-ios-unsigned:
+    runs-on: macos-26
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 固定 SDK / workload / Xcode 组合：10.0.401 + workload 10.0.401 + Xcode 26.6
+      # 这组版本已在 macos-26 runner 上验证过可以产出无签名 ipa
+      - name: Install .NET 10.0.401
+        run: |
+          curl -sSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
+          bash dotnet-install.sh --version 10.0.401 --install-dir "$HOME/.dotnet"
+          echo "DOTNET_ROOT=$HOME/.dotnet" >> "$GITHUB_ENV"
+          echo "$HOME/.dotnet" >> "$GITHUB_PATH"
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version
+
+      # 项目同时含 android/windows/maccatalyst 目标，装完整 maui workload 避免 NETSDK1147
+      - name: Install MAUI workload
+        run: dotnet workload install maui --version 10.0.401
+
+      - name: Verify toolchain
+        run: |
+          dotnet --version
+          dotnet workload --info
+
+      # 覆盖 TargetFrameworks，防止 macOS 上尝试构建 windows 目标导致 NETSDK1100
+      - name: Restore iOS target only
+        run: dotnet restore PKHeX.MAUI.csproj -p:TargetFrameworks=net10.0-ios
+
+      # EnableCodeSigning=false 跳过签名；ArchiveOnBuild=true 让它产出 .ipa
+      - name: Publish unsigned IPA
+        run: |
+          dotnet publish PKHeX.MAUI.csproj \
+            -c Release \
+            -f net10.0-ios \
+            -r ios-arm64 \
+            -p:TargetFrameworks=net10.0-ios \
+            -p:EnableCodeSigning=false \
+            -p:ArchiveOnBuild=true
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: PKHeXMAUI-unsigned-ios
+          path: bin/Release/net10.0-ios/ios-arm64/publish/*.ipa
+          if-no-files-found: error
+          retention-days: 7
