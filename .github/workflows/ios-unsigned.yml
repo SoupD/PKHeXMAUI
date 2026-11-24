@@ -16,7 +16,7 @@ on:
 
 jobs:
   build-ios-unsigned:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 40
 
     steps:
@@ -55,11 +55,9 @@ jobs:
             exit 1
           fi
 
-      - name: Check Xcode
+      - name: Select Xcode 27.2 (required by .NET 11 GA)
         run: |
-          echo "Available Xcodes:"
-          ls -d /Applications/Xcode*.app 2>/dev/null || true
-          echo "Current:"
+          sudo xcode-select -s /Applications/Xcode_27.2.app/Contents/Developer
           xcodebuild -version
 
       # 仓库根目录有多个 csproj/slnx，workload install 在当前目录探测项目会报 MSB1011。
@@ -882,7 +880,6 @@ jobs:
             -p:TargetFrameworks=net11.0-ios \
             -p:ApplicationId=${{ inputs.bundle_id }} \
             -p:SupportedOSPlatformVersion=15.0 \
-            -p:ValidateXcodeVersion=false \
             -p:EnableCodeSigning=false \
             -p:ArchiveOnBuild=false
           echo "::notice::.NET 11 CoreCLR 构建完成。"
