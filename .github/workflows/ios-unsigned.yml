@@ -13,6 +13,11 @@ on:
         type: boolean
         required: false
         default: false
+      apply_chinese:
+        description: '汉化界面文本。默认关闭=纯英文版；排查功能问题时保持关闭，需要中文时勾选'
+        type: boolean
+        required: false
+        default: false
 
 jobs:
   build-ios-unsigned:
@@ -97,7 +102,9 @@ jobs:
           /usr/libexec/PlistBuddy -c "Print :UIDesignRequiresCompatibility" "$PLIST"
 
       # 中文化：脚本与字典内联在 workflow 中，无需在仓库单独放 localization 目录
+      # 默认关闭（apply_chinese=false），产出纯英文版，便于排查功能问题
       - name: Apply Chinese localization
+        if: ${{ inputs.apply_chinese }}
         run: |
           mkdir -p localization
           cat > localization/translations.json <<'JSON_EOF'
@@ -259,7 +266,6 @@ jobs:
             "Current Streak Singles:": "当前连胜单打:",
             "Current: (None)": "当前:（无）",
             "Cute": "可爱",
-            "Data": "数据",
             "Data Blocks Only": "仅数据块",
             "Days": "天",
             "Days from Refreshed:": "刷新后天数:",
@@ -314,7 +320,6 @@ jobs:
             "Ferry": "渡轮",
             "FestaCoins:": "节庆币:",
             "Festival Plaza Name:": "庆典广场名称:",
-            "File": "文件",
             "Flag 0": "标志 0",
             "Flag 1": "标志 1",
             "Flag 2": "标志 2",
@@ -959,7 +964,7 @@ jobs:
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: PKHeXMAUI-zh-net11-coreclr
+          name: PKHeXMAUI-${{ inputs.apply_chinese && 'zh' || 'en' }}-net11-coreclr
           path: unsigned.ipa
           if-no-files-found: error
           retention-days: 7
