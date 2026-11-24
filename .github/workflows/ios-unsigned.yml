@@ -64,11 +64,11 @@ jobs:
       - name: Restore iOS target only
         run: dotnet restore PKHeX.MAUI.csproj -p:TargetFrameworks=net10.0-ios
 
-      # 恢复 AOT 编译：AOT 包不依赖 Mono 解释器/JIT，在 LiveContainer 里兼容性更好。
-      # 保留 TrimMode=copy（不裁剪任何程序集）——上次 AOT 失败时裁剪还开着，元数据被裁掉了。
-      # iOS 上不能用 PublishTrimmed=false，必须用 TrimMode=copy。
-      # 注意：ArchiveOnBuild=true 会强制要求签名，无签名构建必须关掉，只产出 .app。
-      - name: Publish unsigned app
+      # AOT 已验证不可用（PKHeX 的反射/动态代码过不了 AOT，与裁剪无关），直接用 Mono 解释器模式。
+      # TrimMode=copy 不裁剪任何程序集；iOS 上不能用 PublishTrimmed=false。
+      # ArchiveOnBuild=true 强制要求签名，无签名构建必须关掉，只产出 .app。
+      # 此包在 LiveContainer 里必须开启 JIT：长按 App → 设置 → 打开「带 JIT 启动」。
+      - name: Publish unsigned app (interpreter)
         run: |
           dotnet publish PKHeX.MAUI.csproj \
             -c Release \
@@ -76,9 +76,12 @@ jobs:
             -r ios-arm64 \
             -p:TargetFrameworks=net10.0-ios \
             -p:ApplicationId=${{ inputs.bundle_id }} \
+            -p:UseInterpreter=true \
+            -p:MtouchInterpreter=all \
             -p:TrimMode=copy \
             -p:EnableCodeSigning=false \
             -p:ArchiveOnBuild=false
+          echo "::notice::解释器模式构建完成。LiveContainer 中需开启 JIT（长按 App → 设置 → 带 JIT 启动）。"
 
       # 手动把 .app 按 IPA 标准结构打包：Payload/<App>.app -> unsigned.ipa
       - name: Pack unsigned IPA
@@ -108,7 +111,7 @@ jobs:
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: PKHeXMAUI-unsigned-ios-zh
+          name: PKHeXMAUI-zh-interpreter
           path: unsigned.ipa
           if-no-files-found: error
           retention-days: 7
